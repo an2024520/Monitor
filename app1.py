@@ -4,17 +4,6 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# ================= 新增：Jinja2 自定义过滤器 =================
-@app.template_filter('datetime')
-def format_datetime(value):
-    """将时间戳格式化为可读日期时间"""
-    if not value:
-        return "-"
-    try:
-        return datetime.fromtimestamp(float(value)).strftime('%Y-%m-%d %H:%M:%S')
-    except Exception:
-        return "-"
-
 # ================= 配置 =================
 AUTH_TOKEN = "hard-core-v7"
 OFFLINE_THRESHOLD = 30  # 30秒无心跳视为离线

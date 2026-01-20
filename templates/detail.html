@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="3">
+    <title>MyQuant 节点详情</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'JetBrains Mono', monospace; }
+        .card { background-color: #161b22; border: 1px solid #30363d; margin-bottom: 20px; }
+        .card-header { border-bottom: 1px solid #30363d; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; }
+        .text-green { color: #238636; }
+        .text-red { color: #da3633; }
+        .text-blue { color: #58a6ff; }
+        .text-yellow { color: #d29922; }
+        .text-purple { color: #bc8cff; }
+        
+        .log-box { 
+            background: #010409; color: #8b949e; padding: 15px; height: 400px; 
+            overflow-y: auto; font-size: 12px; border: 1px solid #30363d; border-radius: 6px;
+        }
+        
+        .stat-value { font-size: 1.8rem; font-weight: bold; margin-top: 5px; }
+        .stat-sub { font-size: 0.85rem; color: #8b949e; margin-top: -5px; }
+        .stat-label { font-size: 0.75rem; color: #484f58; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        .offline-banner { background: #da3633; color: white; text-align: center; padding: 10px; font-weight: bold; display: none; }
+        
+        /* 顶部导航 */
+        .nav-bar { border-bottom: 1px solid #30363d; padding: 15px 0; margin-bottom: 30px; }
+        .btn-back { color: #58a6ff; text-decoration: none; font-size: 14px; }
+        .btn-back:hover { text-decoration: underline; color: #79c0ff; }
+    </style>
+</head>
+<body>
+
+{% if is_offline %}
+<div class="offline-banner" style="display: block;">
+    ⚠️ 节点已离线 (Last: {{ last_update_ts | datetime }})
+</div>
+{% endif %}
+
+<div class="container mt-4" style="max-width: 1200px;">
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom border-secondary">
+        <div>
+            <a href="/" class="btn-back">← Back to Fleet</a>
+            <h3 class="m-0 mt-2 text-white">
+                {{ system.node_name | default(system.hostname, true) | default('Unknown Node') }} 
+                <small class="text-muted fs-6">({{ system.hostname | default('Localhost') }})</small>
+            </h3>
+        </div>
+        <div>
+            {% if not is_offline %}
+                <span class="badge bg-success rounded-pill">Online</span>
+            {% else %}
+                <span class="badge bg-danger rounded-pill">Offline</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card text-center p-3 h-100">
+                <div class="stat-label">CPU Usage</div>
+                {% set cpu_val = system.cpu_pct | default(system.cpu, true) | default(0) %}
+                <div class="stat-value {{ 'text-red' if cpu_val > 80 else 'text-green' }}">{{ cpu_val }}%</div>
+                <div class="stat-sub">{{ system.cpu_cores | default('?') }} Cores</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card text-center p-3 h-100">
+                <div class="stat-label">RAM Usage</div>
+                {% set mem_val = system.mem_pct | default(0) %}
+                <div class="stat-value {{ 'text-red' if mem_val > 80 else 'text-blue' }}">{{ mem_val }}%</div>
+                
+                <div class="stat-sub">{{ (system.mem_total | default(0) / 1024 / 1024 / 1024) | round(1) }} GB Total</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card text-center p-3 h-100">
+                <div class="stat-label">Disk Usage</div>
+                {% set disk_val = system.disk_pct | default(0) %}
+                <div class="stat-value {{ 'text-red' if disk_val > 90 else 'text-purple' }}">{{ disk_val }}%</div>
+                <div class="stat-sub">{{ (system.disk_total | default(0) / 1024 / 1024 / 1024) | round(0) }} GB Total</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card text-center p-3 h-100">
+                <div class="stat-label">Real-time Net</div>
+                <div class="stat-value text-yellow" style="font-size: 1.4rem;">
+                    ↑{{ system.up_kb | default(0) }}<small>K</small>
+                </div>
+                <div class="stat-value text-blue" style="font-size: 1.4rem; margin-top:0;">
+                    ↓{{ system.down_kb | default(0) }}<small>K</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card text-center p-3 h-100">
+                <div class="stat-label">Total Traffic</div>
+                {% set total_traffic = (system.net_sent_total | default(0)) + (system.net_recv_total | default(0)) %}
+                <div class="stat-value text-white" style="font-size: 1.5rem;">
+                    {{ (total_traffic / 1024 / 1024 / 1024) | round(2) }}
+                </div>
+                <div class="stat-sub">GB Transfer</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="card text-center p-3 h-100">
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value text-white" style="font-size: 1.4rem;">{{ system.uptime_str | default('-') }}</div>
+                <div class="stat-sub">Since Boot</div>
+            </div>
+        </div>
+    </div>
+
+    {% if bot.has_bot %}
+    
+    {% if bot.autopilot %}
+    <div class="card mb-3">
+        <div class="card-header text-blue d-flex justify-content-between">
+            <span>🤖 AutoPilot Sentinel</span>
+            <small>{{ bot.autopilot.last_trigger_time | datetime }}</small>
+        </div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-4">
+                    <small class="text-muted d-block mb-1">MODE</small>
+                    <span class="badge bg-dark border border-secondary p-2 fs-6">{{ bot.autopilot.current_mode }}</span>
+                </div>
+                <div class="col-4">
+                    <small class="text-muted d-block mb-1">STATUS</small>
+                    {% if bot.autopilot.enabled %}
+                        <span class="text-green fw-bold">ENABLED</span>
+                    {% else %}
+                        <span class="text-muted">DISABLED</span>
+                    {% endif %}
+                </div>
+                <div class="col-4">
+                    <small class="text-muted d-block mb-1">SIGNAL</small>
+                    <span class="text-white">{{ bot.autopilot.signal_source | default('NONE') }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if bot.future_grid and bot.future_grid.running %}
+    <div class="card border-primary mb-3" style="border-color: #1f6feb !important;">
+        <div class="card-header text-green">📈 Future Grid Strategy</div>
+        <div class="card-body pt-3 pb-3">
+            <div class="row align-items-center">
+                <div class="col-md-3 text-center border-end border-secondary">
+                    <h2 class="m-0 text-white">{{ bot.future_grid.config.symbol }}</h2>
+                    <span class="badge bg-warning text-dark">x{{ bot.future_grid.config.leverage }}</span>
+                </div>
+                <div class="col-md-9">
+                    <div class="row text-center mt-2">
+                        <div class="col-4">
+                            <small class="text-muted">RANGE</small><br>
+                            <span class="fw-bold text-white">{{ bot.future_grid.config.lower_price }} - {{ bot.future_grid.config.upper_price }}</span>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">GRIDS</small><br>
+                            <span class="text-white">{{ bot.future_grid.config.grid_num }}</span>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">STATE</small><br>
+                            {% if bot.future_grid.paused %}
+                                <span class="text-warning">PAUSED</span>
+                            {% else %}
+                                <span class="text-green blink">RUNNING</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header">📜 Live Logs</div>
+        <div class="log-box">
+            {% for line in logs %}
+                <div style="border-bottom: 1px solid #1a1a1a; padding: 2px 0;">{{ line }}</div>
+            {% else %}
+                <div class="text-muted text-center mt-5">No logs available...</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not bot.has_bot %}
+    <div class="alert alert-dark text-center mt-5 border-secondary">
+        <h5 class="alert-heading">Monitor Mode</h5>
+        <p class="mb-0 text-muted">No active trading bot detected on this node.</p>
+    </div>
+    {% endif %}
+</div>
+
+</body>
+</html>

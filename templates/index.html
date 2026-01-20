@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MyQuant Fleet</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* 全局配置 */
+        body { 
+            background-color: #0d1117; 
+            color: #c9d1d9; 
+            font-family: 'JetBrains Mono', 'Segoe UI', monospace; 
+            font-size: 13px; 
+            overflow-y: scroll;
+        }
+        
+        .container { max-width: 1400px; padding-top: 30px; }
+        
+        .header-bar {
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #node-list { display: flex; flex-direction: column; gap: 8px; }
+
+        .node-row {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 0 15px;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s;
+            height: 48px;
+        }
+        
+        .node-row:hover {
+            border-color: #58a6ff;
+            background-color: #1c2128;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .node-offline { opacity: 0.5; border-color: #444 !important; }
+
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            margin-right: 12px; flex-shrink: 0;
+        }
+        .bg-online { background-color: #238636; box-shadow: 0 0 6px #238636; }
+        .bg-offline { background-color: #da3633; }
+
+        .identity-col { 
+            width: 140px; 
+            flex-shrink: 0; 
+            display: flex; 
+            align-items: center;
+            margin-right: 10px;
+        }
+        .node-name { 
+            color: #f0f6fc; 
+            font-weight: 700; 
+            font-size: 13px; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            white-space: nowrap; 
+        }
+
+        .metrics-col { 
+            flex-grow: 1; 
+            display: flex; 
+            align-items: center; 
+            color: #8b949e; 
+            gap: 12px; 
+            overflow-x: auto; 
+            white-space: nowrap;
+            padding-right: 20px;
+            scrollbar-width: none;
+        }
+        .metrics-col::-webkit-scrollbar { display: none; }
+
+        .metric-item { display: flex; align-items: baseline; }
+        
+        /* === 全员宽度锁定系统 (Total Lock) === */
+        /* 预留空间估算：
+           CPU: "100% (128C)" -> 90px
+           MEM: "100% (128G/256G)" -> 150px
+           SSD: "100% (1.5T/2.0T)" -> 150px
+           TRAFFIC: "Total 999G | Avg..." -> 160px
+           NET: "↑999K ↓999K" -> 145px
+           UP: "999d 23h" -> 80px
+        */
+        .w-fixed-cpu     { min-width: 90px; }
+        .w-fixed-mem     { min-width: 150px; }
+        .w-fixed-disk    { min-width: 150px; }
+        .w-fixed-traffic { min-width: 160px; }
+        .w-fixed-net     { min-width: 145px; }
+        .w-fixed-up      { min-width: 80px; }
+
+        .metric-label { color: #484f58; font-size: 10px; margin-right: 4px; text-transform: uppercase; }
+        .metric-val { color: #c9d1d9; font-size: 12px; }
+        .metric-val-highlight { color: #79c0ff; font-size: 12px; }
+        .metric-val-warn { color: #ffa657; font-size: 12px; }
+        .metric-val-danger { color: #ff7b72; font-size: 12px; }
+
+        .divider { width: 1px; height: 12px; background: #30363d; flex-shrink: 0; }
+
+        .action-col { 
+            width: 100px;
+            flex-shrink: 0; 
+            text-align: right; 
+            padding-left: 10px;
+            background: linear-gradient(90deg, transparent, #161b22 10%);
+            z-index: 2;
+        }
+        .node-row:hover .action-col { background: linear-gradient(90deg, transparent, #1c2128 10%); }
+
+        .btn-console {
+            background-color: #1f6feb;
+            color: white;
+            border: none;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background 0.2s;
+            display: inline-block;
+        }
+        .btn-console:hover { background-color: #388bfd; color: white; }
+
+        @media (max-width: 768px) {
+            .node-row { height: auto; flex-wrap: wrap; padding: 12px; }
+            .identity-col { width: 100%; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+            .metrics-col { width: 100%; overflow-x: auto; padding-bottom: 5px; gap: 15px; } 
+            .action-col { width: 100%; text-align: left; margin-top: 8px; background: none; }
+            .divider { display: none; }
+            /* 移动端自动解除锁定 */
+            .w-fixed-cpu, .w-fixed-mem, .w-fixed-disk, 
+            .w-fixed-traffic, .w-fixed-net, .w-fixed-up { min-width: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-bar">
+        <div>
+            <span style="font-size: 18px; font-weight: bold;">⚡ FLEET COMMANDER</span>
+        </div>
+        <div class="text-muted" style="font-size: 12px;">
+            <span id="node-count" class="text-white">0</span> NODES
+        </div>
+    </div>
+
+    <div id="node-list">
+        <div class="text-center text-muted mt-5">Loading telemetry...</div>
+    </div>
+</div>
+
+<script>
+    const API_URL = '/api/fleet_status';
+    
+    function render(data) {
+        const container = document.getElementById('node-list');
+        document.getElementById('node-count').innerText = data.nodes.length;
+
+        if (data.nodes.length === 0) {
+            container.innerHTML = '<div class="text-center text-muted mt-5">📡 等待接入...</div>';
+            return;
+        }
+
+        let html = '';
+        data.nodes.forEach(node => {
+            const statusClass = node.is_offline ? 'bg-offline' : 'bg-online';
+            const rowClass = node.is_offline ? 'node-row node-offline' : 'node-row';
+            
+            let btnHtml = '';
+            if (node.has_bot) {
+                btnHtml = `<a href="/node/${node.hostname}" target="_blank" class="btn-console">CONSOLE</a>`;
+            }
+
+            const cpuVal = parseInt(node.cpu_text); 
+            const cpuColor = cpuVal > 80 ? 'metric-val-danger' : (cpuVal > 50 ? 'metric-val-warn' : 'metric-val');
+
+            html += `
+            <div class="${rowClass}">
+                <div class="status-dot ${statusClass}"></div>
+
+                <div class="identity-col">
+                    <div class="node-name" title="${node.name} (${node.hostname})">${node.name}</div>
+                </div>
+
+                <div class="metrics-col">
+                    <div class="metric-item w-fixed-cpu"><span class="metric-label">CPU</span><span class="${cpuColor}">${node.cpu_text}</span></div>
+                    <div class="divider"></div>
+
+                    <div class="metric-item w-fixed-mem"><span class="metric-label">MEM</span><span class="metric-val">${node.mem_text}</span></div>
+                    <div class="divider"></div>
+
+                    <div class="metric-item w-fixed-disk"><span class="metric-label">SSD</span><span class="metric-val">${node.disk_text}</span></div>
+                    <div class="divider"></div>
+
+                    <div class="metric-item w-fixed-traffic" title="Total & Daily Avg">
+                        <span class="metric-label">TRAFFIC</span>
+                        <span class="metric-val" style="font-size:11px;">${node.traffic_text}</span>
+                    </div>
+                    <div class="divider"></div>
+
+                    <div class="metric-item w-fixed-net" title="Real-time Speed">
+                        <span class="metric-label">NET</span>
+                        <span class="metric-val-highlight">↑${node.up_speed}K</span>
+                        <span class="metric-val-highlight ms-1">↓${node.down_speed}K</span>
+                    </div>
+                    <div class="divider"></div>
+
+                    <div class="metric-item w-fixed-up"><span class="metric-label">UP</span><span class="metric-val">${node.uptime}</span></div>
+                </div>
+
+                <div class="action-col">
+                    ${btnHtml}
+                </div>
+            </div>
+            `;
+        });
+        container.innerHTML = html;
+    }
+
+    async function fetchStatus() {
+        try {
+            const response = await fetch(API_URL);
+            const data = await response.json();
+            render(data);
+        } catch (error) { console.error(error); }
+    }
+
+    fetchStatus();
+    setInterval(fetchStatus, 3000);
+</script>
+</body>
+</html>
