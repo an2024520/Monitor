@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="5"> <title>MyQuant 远程监控</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', monospace; }
+        .card { background-color: #1e1e1e; border: 1px solid #333; margin-bottom: 20px; }
+        .card-header { border-bottom: 1px solid #333; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        .text-green { color: #00e676; }
+        .text-red { color: #ff5252; }
+        .text-blue { color: #2979ff; }
+        .log-box { 
+            background: #000; color: #bbb; padding: 10px; height: 300px; 
+            overflow-y: auto; font-size: 12px; font-family: 'Consolas', monospace; border: 1px solid #333;
+        }
+        .stat-value { font-size: 1.5rem; font-weight: bold; }
+        .stat-label { font-size: 0.8rem; color: #888; }
+        .offline-banner { background: #d32f2f; color: white; text-align: center; padding: 10px; font-weight: bold; display: none; }
+    </style>
+</head>
+<body>
+
+{% if is_offline %}
+<div class="offline-banner" style="display: block;">
+    ⚠️ 警报：监控节点已离线！(最后上报: {{ last_update_ts | datetime }})
+</div>
+{% endif %}
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>📡 MyQuant Monitor <span class="badge bg-secondary" style="font-size: 0.5em;">{{ system.hostname }}</span></h3>
+        <div class="text-end">
+            <small class="text-muted">Last Update: {{ last_update_ts | datetime }}</small>
+            {% if not is_offline %}
+                <span class="badge bg-success">Online</span>
+            {% else %}
+                <span class="badge bg-danger">Offline</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card text-center p-3">
+                <div class="stat-label">CPU</div>
+                <div class="stat-value {{ 'text-red' if system.cpu > 80 else 'text-green' }}">{{ system.cpu }}%</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center p-3">
+                <div class="stat-label">内存</div>
+                <div class="stat-value {{ 'text-red' if system.mem_pct > 80 else 'text-green' }}">{{ system.mem_pct }}%</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center p-3">
+                <div class="stat-label">网络上行</div>
+                <div class="stat-value text-blue">{{ system.up_kb }} <small>KB/s</small></div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center p-3">
+                <div class="stat-label">运行时间</div>
+                <div class="stat-value">{{ system.uptime_str }}</div>
+            </div>
+        </div>
+    </div>
+
+    {% if bot.has_bot %}
+    
+    {% if bot.autopilot %}
+    <div class="card">
+        <div class="card-header text-blue">🤖 AutoPilot 状态</div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-4">
+                    <small>当前模式</small><br>
+                    <h4 class="text-uppercase">{{ bot.autopilot.current_mode }}</h4>
+                </div>
+                <div class="col-4">
+                    <small>启用状态</small><br>
+                    <h4 class="{{ 'text-green' if bot.autopilot.enabled else 'text-muted' }}">
+                        {{ 'ON' if bot.autopilot.enabled else 'OFF' }}
+                    </h4>
+                </div>
+                <div class="col-4">
+                    <small>上次触发</small><br>
+                    <span>{{ bot.autopilot.last_trigger_time | datetime }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if bot.future_grid and bot.future_grid.running %}
+    <div class="card border-primary">
+        <div class="card-header text-green">📈 合约网格策略</div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-md-3">
+                    <div class="stat-label">交易对</div>
+                    <div>{{ bot.future_grid.config.symbol }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-label">价格区间</div>
+                    <div>{{ bot.future_grid.config.lower_price }} - {{ bot.future_grid.config.upper_price }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-label">杠杆</div>
+                    <div class="text-warning">x{{ bot.future_grid.config.leverage }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-label">状态</div>
+                    {% if bot.future_grid.paused %}
+                        <span class="badge bg-warning text-dark">暂停中</span>
+                    {% else %}
+                        <span class="badge bg-success">运行中</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% elif bot.future_grid %}
+    <div class="card">
+        <div class="card-body text-center text-muted">
+            策略已停止
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header">📜 实时日志 (最近 15 条)</div>
+        <div class="log-box">
+            {% for line in logs %}
+                <div>{{ line }}</div>
+            {% else %}
+                <div class="text-muted">暂无日志或无法读取...</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not bot.has_bot %}
+    <div class="alert alert-secondary text-center">
+        未检测到 MyQuantBot 运行实例，仅显示主机监控。
+    </div>
+    {% endif %}
+
+</div>
+
+</body>
+</html>
