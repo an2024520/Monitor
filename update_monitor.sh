@@ -27,6 +27,14 @@ git fetch --all
 git reset --hard origin/main
 git pull
 
+# ==========================================
+# [新增] 赋予执行权限 (关键修复)
+# 防止 Windows 提交后权限丢失，导致脚本下次无法运行
+# 使用 *.sh 可以同时修复 update_monitor.sh 和 deploy_server.sh
+chmod +x "$APP_DIR"/*.sh
+echo "    -> 已修复脚本执行权限 (+x)"
+# ==========================================
+
 # 2. 补充依赖
 echo ">>> [2/3] 检查依赖变更..."
 if [ -f "requirements.txt" ]; then
