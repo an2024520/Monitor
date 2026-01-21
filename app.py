@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template, abort
 import time
+import os
 from datetime import datetime
 
 app = Flask(__name__)
@@ -178,4 +179,7 @@ def node_detail(hostname):
     return render_template('detail.html', **display_data)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # 从环境变量读取 Host 和 Port，默认 0.0.0.0:5000
+    host = os.getenv('FLASK_HOST', '0.0.0.0')
+    port = int(os.getenv('FLASK_PORT', 5000))
+    app.run(host=host, port=port)
