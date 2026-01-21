@@ -9,13 +9,6 @@ import sys
 import platform
 
 # ================= 常量定义 =================
-# 配置文件存储路径
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "agent_config.json")
-
-# 鉴权口令
-AUTH_TOKEN = "hard-core-v7"
-
 # 机器人路径
 PATH_FUTURE_GRID = "/opt/myquant_config/bot_state.json"
 PATH_AUTOPILOT = "/opt/myquantbot/autopilot_state.json"
@@ -26,10 +19,12 @@ IS_WINDOWS = platform.system() == "Windows"
 
 class SidecarAgent:
     def __init__(self):
-        # 1. 加载或生成配置
-        self.config = self._load_or_create_config()
-        self.node_name = self.config.get("node_name", socket.gethostname())
-        self.server_url = self.config.get("server_url", "http://127.0.0.1:5000/report")
+        # 1. 配置加载 (优先环境变量)
+        self.server_url = os.getenv("AGENT_REPORT_URL", "http://127.0.0.1:5000/report")
+        self.auth_token = os.getenv("AGENT_TOKEN", "hard-core-v7")
+        
+        # [修改] 优先读取部署脚本注入的 AGENT_NAME，如果没有则用主机名
+        self.node_name = os.getenv("AGENT_NAME", socket.gethostname())
         
         self.hostname = socket.gethostname()
         self.last_net_io = psutil.net_io_counters()
@@ -39,46 +34,14 @@ class SidecarAgent:
         print(f"\n>>> [Agent] 探针启动 ({mode})")
         print(f">>> [Agent] 节点名称: {self.node_name}")
         print(f">>> [Agent] 监控中枢: {self.server_url}")
+        print(f">>> [Agent] 身份令牌: {self.auth_token}")
         print("------------------------------------------------")
-
-    def _load_or_create_config(self):
-        """交互式配置生成逻辑"""
-        if os.path.exists(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception:
-                pass
-
-        if not sys.stdin.isatty():
-            return {"server_url": "http://127.0.0.1:5000/report", "node_name": socket.gethostname()}
-
-        print("\n" + "="*40)
-        print("👋 欢迎使用 MyQuant 监控探针 v4.0 (全量采集版)")
-        print("="*40)
-        
-        default_ip = "127.0.0.1"
-        server_ip = input(f"1. 请输入监控服务端 IP [默认 {default_ip}]: ").strip() or default_ip
-        final_url = server_ip if server_ip.startswith("http") else f"http://{server_ip}:5000/report"
-
-        default_name = socket.gethostname()
-        node_name = input(f"2. 请为本机取个名字 [默认 {default_name}]: ").strip() or default_name
-
-        config = {"server_url": final_url, "node_name": node_name}
-        try:
-            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
-            print(f"✅ 配置已保存")
-        except Exception as e:
-            print(f"❌ 保存失败: {e}")
-        
-        return config
 
     def _get_system_stats(self):
         """采集通用主机指标 (v4.0 增强版)"""
         # 1. CPU
         cpu_pct = psutil.cpu_percent(interval=None)
-        cpu_cores = psutil.cpu_count(logical=True)  # [新增] 逻辑核数
+        cpu_cores = psutil.cpu_count(logical=True)
         
         # 2. 内存
         mem = psutil.virtual_memory()
@@ -117,12 +80,12 @@ class SidecarAgent:
             "mem_pct": mem.percent,
             "disk_pct": disk.percent,
             
-            # --- [新增] 绝对值指标 (用于高密度展示) ---
-            "cpu_cores": cpu_cores,              # 核数 (如 2)
-            "mem_total": mem.total,              # 内存总量 (Bytes)
-            "disk_total": disk.total,            # 硬盘总量 (Bytes)
-            "net_sent_total": curr_net.bytes_sent, # 累计发送 (Bytes)
-            "net_recv_total": curr_net.bytes_recv, # 累计接收 (Bytes)
+            # --- 绝对值指标 ---
+            "cpu_cores": cpu_cores,
+            "mem_total": mem.total,
+            "disk_total": disk.total,
+            "net_sent_total": curr_net.bytes_sent,
+            "net_recv_total": curr_net.bytes_recv,
             
             # --- 速率指标 ---
             "up_kb": up_speed,
@@ -160,14 +123,14 @@ class SidecarAgent:
                 sys_stats = self._get_system_stats()
                 
                 payload = {
-                    "token": AUTH_TOKEN,
+                    "token": self.auth_token,
                     "timestamp": int(time.time()),
                     "type": "heartbeat",
                     "node_info": {
                         "hostname": self.hostname,
-                        "name": self.node_name
+                        "name": self.node_name  # 使用环境变量或默认值
                     },
-                    "system": sys_stats,  # 包含新增的绝对值数据
+                    "system": sys_stats,
                     "bot": {
                         "has_bot": False,
                         "future_grid": None,
@@ -186,12 +149,18 @@ class SidecarAgent:
                     payload["logs"] = self._get_bot_logs()
 
                 try:
-                    resp = requests.post(self.server_url, json=payload, timeout=3)
+                    headers = {'Content-Type': 'application/json'}
+                    resp = requests.post(self.server_url, json=payload, headers=headers, timeout=3)
+                    
                     ts = time.strftime('%H:%M:%S')
-                    # 打印更丰富的调试信息，方便你确认数据是否采集到了
-                    print(f"[{ts}] 上报 ✅ | 流量总量: {sys_stats['net_sent_total']//1024//1024} MB")
-                except requests.exceptions.RequestException:
-                    pass
+                    status = resp.status_code
+                    if status == 200:
+                        print(f"[{ts}] 上报 ✅ | 流量: {sys_stats['net_sent_total']//1024//1024} MB")
+                    else:
+                        print(f"[{ts}] 上报失败 ❌ | HTTP {status}")
+                        
+                except requests.exceptions.RequestException as e:
+                    print(f"[{time.strftime('%H:%M:%S')}] 连接错误: {e}")
 
             except Exception as e:
                 print(f"Agent Critical Error: {e}", file=sys.stderr)
