@@ -16,6 +16,18 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# ================= 新增：交互式配置 =================
+echo ">>> ⚙️  配置服务参数..."
+read -p "请输入监听 Host (默认 0.0.0.0): " CUSTOM_HOST
+# 如果为空则使用默认值
+CUSTOM_HOST=${CUSTOM_HOST:-"0.0.0.0"}
+
+read -p "请输入监听 Port (默认 5000): " CUSTOM_PORT
+CUSTOM_PORT=${CUSTOM_PORT:-"5000"}
+
+echo "    -> 确认配置: 监听 ${CUSTOM_HOST}:${CUSTOM_PORT}"
+# ====================================================
+
 echo ">>> 🚀 开始部署监控服务端 (Server)..."
 
 # 1. 基础工具
@@ -70,6 +82,11 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONIOENCODING=utf-8
 Environment=LANG=C.UTF-8
 
+# --- 动态注入的环境变量 ---
+Environment=FLASK_HOST=${CUSTOM_HOST}
+Environment=FLASK_PORT=${CUSTOM_PORT}
+# ------------------------
+
 Restart=always
 RestartSec=5
 
@@ -83,7 +100,7 @@ systemctl restart ${SERVICE_NAME}
 
 echo "========================================================"
 echo "✅ Server 部署完成！"
-echo "🌐 访问地址: http://<你的VPS_IP>:5000"
+echo "🌐 访问地址: http://<你的VPS_IP>:${CUSTOM_PORT}"
 echo "--------------------------------------------------------"
 echo "📜 查看日志: journalctl -u ${SERVICE_NAME} -f"
 echo "========================================================"
