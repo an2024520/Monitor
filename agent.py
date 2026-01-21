@@ -20,10 +20,11 @@ IS_WINDOWS = platform.system() == "Windows"
 class SidecarAgent:
     def __init__(self):
         # 1. 配置加载 (优先环境变量)
+        # 注意：这些环境变量是由 deploy_agent.sh 脚本注入到 Systemd 服务的
         self.server_url = os.getenv("AGENT_REPORT_URL", "http://127.0.0.1:5000/report")
         self.auth_token = os.getenv("AGENT_TOKEN", "hard-core-v7")
         
-        # [修改] 优先读取部署脚本注入的 AGENT_NAME，如果没有则用主机名
+        # 优先读取部署脚本注入的 AGENT_NAME，如果没有则用主机名
         self.node_name = os.getenv("AGENT_NAME", socket.gethostname())
         
         self.hostname = socket.gethostname()

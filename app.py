@@ -75,7 +75,7 @@ def receive_report():
     }
     return jsonify({"status": "ok"})
 
-# --- 2. 前端 API 接口 (JS -> Server) [新增核心] ---
+# --- 2. 前端 API 接口 (JS -> Server) [核心修复] ---
 @app.route('/api/fleet_status')
 def api_fleet_status():
     """为前端提供实时跳动的数据源 (计算逻辑下沉到后端)"""
@@ -137,8 +137,13 @@ def api_fleet_status():
             
             # 状态数据
             "uptime": format_uptime_smart(boot_time),
+            
+            # 这里的 has_bot 决定了前端是否显示 CONSOLE 按钮
             "has_bot": bot.get("has_bot", False),
-            "bot_mode": bot.get("autopilot", {}).get("current_mode"),
+            
+            # [修复关键点] 使用 (or {}) 技巧防止 NoneType 报错
+            # 原理解析：如果 get 返回 None，则变成了 None or {}，即 {}，后续 safe
+            "bot_mode": (bot.get("autopilot") or {}).get("current_mode"),
             
             # 排序权重 (在线优先)
             "_sort_score": 0 if is_offline else 1
