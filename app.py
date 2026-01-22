@@ -117,7 +117,7 @@ def api_fleet_status():
         traffic_total = sent_total + recv_total
         
         daily_avg = traffic_total / uptime_days
-        traffic_str = f"Total {format_bytes(traffic_total)} | Avg {format_bytes(daily_avg)}/D"
+        traffic_str = f"Tot {format_bytes(traffic_total)} · Day {format_bytes(daily_avg)}"
 
         # 构造精简对象供前端渲染
         nodes_list.append({
