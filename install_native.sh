@@ -1,86 +1,116 @@
 #!/bin/bash
 
 # ========================================================
-#  MyQuant Native Agent 安装脚本
-#  功能：自动下载 Shell 版探针、安装 jq、配置 Systemd 服务
+#  MyQuant Native Agent 管理脚本 (安装/更新)
+#  功能：一键部署或更新 Shell 版探针
 # ========================================================
 
+# 配置区域
 APP_DIR="/opt/mq_monitor_sh"
 SCRIPT_NAME="agent_native.sh"
 SERVICE_NAME="mq-monitor-sh"
-
-# 您的 GitHub 文件直链
 DOWNLOAD_URL="https://raw.githubusercontent.com/an2024520/Monitor/refs/heads/main/agent_native.sh"
 
+# 颜色定义
+GREEN="\033[32m"
+RED="\033[31m"
+YELLOW="\033[33m"
+RESET="\033[0m"
+
+# 权限检查
 if [ "$EUID" -ne 0 ]; then 
-  echo "❌ 请使用 root 权限运行"
+  echo -e "${RED}❌ 请使用 root 权限运行${RESET}"
   exit 1
 fi
 
-echo ">>> 🚀 开始部署 Native Shell 版探针..."
+# ========================================================
+# 核心函数
+# ========================================================
 
-# 1. 自动安装依赖 (jq, curl)
-echo ">>> [1/4] 检查并安装依赖 (jq)..."
-if ! command -v jq &> /dev/null; then
-    if command -v apt-get &> /dev/null; then
-        apt-get update -y > /dev/null 2>&1
-        apt-get install -y jq curl > /dev/null 2>&1
-    elif command -v yum &> /dev/null; then
-        yum install -y jq curl > /dev/null 2>&1
-    elif command -v apk &> /dev/null; then
-        apk add jq curl > /dev/null 2>&1
+# 函数：下载最新代码
+download_core() {
+    echo -e ">>> ⬇️  正在拉取最新代码..."
+    mkdir -p "$APP_DIR"
+    
+    # 强制覆盖下载
+    curl -sL "$DOWNLOAD_URL" -o "$APP_DIR/$SCRIPT_NAME"
+
+    # 校验
+    if [ -s "$APP_DIR/$SCRIPT_NAME" ]; then
+        chmod +x "$APP_DIR/$SCRIPT_NAME"
+        echo -e "    -> ${GREEN}下载成功${RESET}"
     else
-        echo "⚠️  无法自动安装 jq，请手动安装: apt/yum install jq"
+        echo -e "${RED}❌ 错误: 下载失败或文件为空。${RESET}"
+        echo "    地址: $DOWNLOAD_URL"
         exit 1
     fi
-    echo "    -> jq 安装完成"
-else
-    echo "    -> jq 已存在，跳过"
-fi
+}
 
-# 2. 下载并部署脚本
-echo ">>> [2/4] 从 GitHub 下载探针脚本..."
-mkdir -p "$APP_DIR"
+# 函数：安装依赖
+install_dependencies() {
+    echo -e ">>> 📦 检查系统依赖 (jq, curl)..."
+    if ! command -v jq &> /dev/null; then
+        if command -v apt-get &> /dev/null; then
+            apt-get update -y > /dev/null 2>&1
+            apt-get install -y jq curl > /dev/null 2>&1
+        elif command -v yum &> /dev/null; then
+            yum install -y jq curl > /dev/null 2>&1
+        elif command -v apk &> /dev/null; then
+            apk add jq curl > /dev/null 2>&1
+        else
+            echo -e "${RED}⚠️  无法自动安装 jq，请手动安装: apt/yum install jq${RESET}"
+            exit 1
+        fi
+        echo -e "    -> ${GREEN}安装完成${RESET}"
+    else
+        echo -e "    -> ${GREEN}jq 已存在，跳过${RESET}"
+    fi
+}
 
-# 使用 curl 下载文件 (-s: 静默, -L: 跟随跳转, -o: 保存为)
-curl -sL "$DOWNLOAD_URL" -o "$APP_DIR/$SCRIPT_NAME"
+# ========================================================
+# 菜单逻辑
+# ========================================================
 
-# 检查是否下载成功
-if [ -s "$APP_DIR/$SCRIPT_NAME" ]; then
-    chmod +x "$APP_DIR/$SCRIPT_NAME"
-    echo "    -> 下载成功！"
-else
-    echo "❌ 错误: 下载失败或文件为空。"
-    echo "    地址: $DOWNLOAD_URL"
-    echo "    请检查网络连接或 URL 是否正确。"
-    exit 1
-fi
+clear
+echo "========================================================"
+echo "   MyQuant Monitor Native Agent (Shell版) "
+echo "========================================================"
+echo " 1. 🚀 全新安装 (Install)"
+echo " 2. 🔄 仅更新代码 (Update)"
+echo "========================================================"
+read -p "请输入选项 [1-2]: " CHOICE
 
-# 3. 交互式配置
-echo ">>> [3/4] 配置参数..."
+case $CHOICE in
+    1)
+        # ==================== [全新安装流程] ====================
+        echo ""
+        echo -e "${GREEN}>>> 进入安装模式...${RESET}"
+        
+        install_dependencies
+        download_core
 
-# 尝试读取旧的 IP 配置作为默认值
-DEFAULT_IP="127.0.0.1"
-DEFAULT_NAME=$(hostname)
+        # 配置交互
+        echo ">>> ⚙️  配置参数..."
+        DEFAULT_IP="127.0.0.1"
+        DEFAULT_NAME=$(hostname)
 
-read -p "1. Server IP [默认: $DEFAULT_IP, IPv6请加方括号]: " INPUT_IP
-SERVER_IP=${INPUT_IP:-$DEFAULT_IP}
+        read -p "1. Server IP [默认: $DEFAULT_IP, IPv6请加方括号]: " INPUT_IP
+        SERVER_IP=${INPUT_IP:-$DEFAULT_IP}
 
-read -p "2. Server Port [默认: 30308]: " INPUT_PORT
-SERVER_PORT=${INPUT_PORT:-30308}
+        read -p "2. Server Port [默认: 30308]: " INPUT_PORT
+        SERVER_PORT=${INPUT_PORT:-30308}
 
-read -p "3. 节点名称 [默认: $DEFAULT_NAME]: " INPUT_NAME
-NODE_NAME=${INPUT_NAME:-$DEFAULT_NAME}
+        read -p "3. 节点名称 [默认: $DEFAULT_NAME]: " INPUT_NAME
+        NODE_NAME=${INPUT_NAME:-$DEFAULT_NAME}
 
-read -p "4. Token [默认: hard-core-v7]: " INPUT_TOKEN
-AUTH_TOKEN=${INPUT_TOKEN:-"hard-core-v7"}
+        read -p "4. Token [默认: hard-core-v7]: " INPUT_TOKEN
+        AUTH_TOKEN=${INPUT_TOKEN:-"hard-core-v7"}
 
-FULL_URL="http://${SERVER_IP}:${SERVER_PORT}/report"
+        FULL_URL="http://${SERVER_IP}:${SERVER_PORT}/report"
 
-# 4. 创建 Systemd 服务
-echo ">>> [4/4] 创建系统服务 ($SERVICE_NAME)..."
-
-cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
+        # 创建服务
+        echo ">>> 📝 创建系统服务..."
+        cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]
 Description=MyQuant Monitor Native Agent (Shell)
 After=network.target
@@ -93,24 +123,54 @@ ExecStart=/bin/bash ${APP_DIR}/${SCRIPT_NAME}
 Restart=always
 RestartSec=5
 
-# --- 环境变量注入 ---
 Environment=AGENT_REPORT_URL=${FULL_URL}
 Environment=AGENT_TOKEN=${AUTH_TOKEN}
 Environment=AGENT_NAME=${NODE_NAME}
-# ------------------
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# 5. 启动服务
-systemctl daemon-reload
-systemctl enable ${SERVICE_NAME}
-systemctl restart ${SERVICE_NAME}
+        # 启动
+        systemctl daemon-reload
+        systemctl enable ${SERVICE_NAME}
+        systemctl restart ${SERVICE_NAME}
+        
+        echo -e "${GREEN}✅ 安装并启动成功！${RESET}"
+        ;;
 
-echo "========================================================"
-echo "✅ 部署成功！"
-echo "🔧 服务名称: $SERVICE_NAME"
-echo "📂 安装路径: $APP_DIR"
-echo "📝 查看日志: journalctl -u $SERVICE_NAME -f"
-echo "========================================================"
+    2)
+        # ==================== [更新流程] ====================
+        echo ""
+        echo -e "${GREEN}>>> 进入更新模式...${RESET}"
+        
+        # 1. 检查目录是否存在
+        if [ ! -d "$APP_DIR" ]; then
+            echo -e "${RED}❌ 错误: 未检测到安装目录 ($APP_DIR)，请先选择 '1. 全新安装'。${RESET}"
+            exit 1
+        fi
+
+        # 2. 下载新代码
+        download_core
+
+        # 3. 重启服务
+        echo ">>> ♻️  重启服务..."
+        if systemctl list-units --full -all | grep -Fq "$SERVICE_NAME.service"; then
+            systemctl daemon-reload
+            systemctl restart ${SERVICE_NAME}
+            echo -e "${GREEN}✅ 更新完成！服务已重启。${RESET}"
+            
+            # 显示简要状态
+            echo "----------------------------------------"
+            systemctl status ${SERVICE_NAME} | grep "Active:"
+            echo "----------------------------------------"
+        else
+            echo -e "${YELLOW}⚠️  警告: 代码已更新，但服务 ($SERVICE_NAME) 未找到，可能需要手动启动。${RESET}"
+        fi
+        ;;
+
+    *)
+        echo -e "${RED}❌ 无效选项，退出。${RESET}"
+        exit 1
+        ;;
+esac
