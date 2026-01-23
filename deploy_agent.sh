@@ -46,7 +46,7 @@ echo "⚙️  配置 Agent 参数"
 echo "--------------------------------------------------------"
 
 # 1. 设置 IP
-read -p "1. Server IP [默认: ${DEFAULT_IP:-127.0.0.1}]: " INPUT_IP
+read -p "1. Server IP [默认: ${DEFAULT_IP:-127.0.0.1}, 若IPV6请手动加方括号]: " INPUT_IP
 SERVER_IP=${INPUT_IP:-${DEFAULT_IP:-"127.0.0.1"}}
 
 # 2. 设置 端口
