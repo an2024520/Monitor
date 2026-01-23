@@ -2,12 +2,15 @@
 
 # ========================================================
 #  MyQuant Native Agent 安装脚本
-#  功能：环境准备、安装 jq、配置 Systemd 服务
+#  功能：自动下载 Shell 版探针、安装 jq、配置 Systemd 服务
 # ========================================================
 
 APP_DIR="/opt/mq_monitor_sh"
 SCRIPT_NAME="agent_native.sh"
-SERVICE_NAME="mq-monitor-sh" # 新的服务名，不冲突
+SERVICE_NAME="mq-monitor-sh"
+
+# 您的 GitHub 文件直链
+DOWNLOAD_URL="https://raw.githubusercontent.com/an2024520/Monitor/refs/heads/main/agent_native.sh"
 
 if [ "$EUID" -ne 0 ]; then 
   echo "❌ 请使用 root 权限运行"
@@ -35,24 +38,28 @@ else
     echo "    -> jq 已存在，跳过"
 fi
 
-# 2. 准备目录和文件
-echo ">>> [2/4] 部署脚本文件..."
+# 2. 下载并部署脚本
+echo ">>> [2/4] 从 GitHub 下载探针脚本..."
 mkdir -p "$APP_DIR"
 
-# 假设 agent_native.sh 和 install_native.sh 在同一目录下
-# 如果是从网络下载，这里可以换成 curl 下载逻辑
-if [ -f "$SCRIPT_NAME" ]; then
-    cp "$SCRIPT_NAME" "$APP_DIR/"
+# 使用 curl 下载文件 (-s: 静默, -L: 跟随跳转, -o: 保存为)
+curl -sL "$DOWNLOAD_URL" -o "$APP_DIR/$SCRIPT_NAME"
+
+# 检查是否下载成功
+if [ -s "$APP_DIR/$SCRIPT_NAME" ]; then
     chmod +x "$APP_DIR/$SCRIPT_NAME"
+    echo "    -> 下载成功！"
 else
-    echo "❌ 错误: 未找到 $SCRIPT_NAME，请确保两个脚本在一起"
+    echo "❌ 错误: 下载失败或文件为空。"
+    echo "    地址: $DOWNLOAD_URL"
+    echo "    请检查网络连接或 URL 是否正确。"
     exit 1
 fi
 
-# 3. 交互式配置 (只在安装时运行一次)
+# 3. 交互式配置
 echo ">>> [3/4] 配置参数..."
 
-# 读取旧配置作为默认值 (如果存在)
+# 尝试读取旧的 IP 配置作为默认值
 DEFAULT_IP="127.0.0.1"
 DEFAULT_NAME=$(hostname)
 
