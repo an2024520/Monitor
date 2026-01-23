@@ -27,8 +27,9 @@ fi
 # --------------------------------------------------------
 
 # 获取当前网卡流量 (Bytes)
+# [修改后] 强制输出纯数字，修复崩溃 Bug
 get_net_bytes() {
-    cat /proc/net/dev | awk '/eth0|ens|eno|enp|wlan/{rx+=$2; tx+=$10} END{print rx, tx}'
+    cat /proc/net/dev | awk '/eth0|ens|eno|enp|wlan/{rx+=$2; tx+=$10} END{printf "%.0f %.0f", rx, tx}'
 }
 
 # 安全读取 JSON 文件 (如果文件不存在或格式错误，返回 null)
