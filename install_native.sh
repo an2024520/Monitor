@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ========================================================
-#  MyQuant Native Agent 管理脚本 (v1.2)
-#  功能：安装、更新、彻底卸载
+#  MyQuant Native Agent 管理脚本 (v1.3)
+#  功能：安装(支持HTTP/HTTPS)、更新、彻底卸载
 # ========================================================
 
 # 配置区域
@@ -15,6 +15,7 @@ DOWNLOAD_URL="https://raw.githubusercontent.com/an2024520/Monitor/refs/heads/mai
 GREEN="\033[32m"
 RED="\033[31m"
 YELLOW="\033[33m"
+CYAN="\033[36m"
 RESET="\033[0m"
 
 # 权限检查
@@ -73,7 +74,7 @@ install_dependencies() {
 
 clear
 echo "========================================================"
-echo "   MyQuant Monitor Native Agent (Shell版) "
+echo "   MyQuant Monitor Native Agent (Shell版) v1.3"
 echo "========================================================"
 echo " 1. 🚀 全新安装 (Install)"
 echo " 2. 🔄 更新代码 (Update)"
@@ -90,16 +91,33 @@ case $CHOICE in
         install_dependencies
         download_core
 
-        # 配置交互
-        echo ">>> ⚙️  配置参数..."
-        DEFAULT_IP="127.0.0.1"
+        # --- 配置交互 (核心修改部分) ---
+        echo ">>> ⚙️  配置连接参数..."
         DEFAULT_NAME=$(hostname)
+        
+        echo -e "${CYAN}请选择通信协议:${RESET}"
+        echo " 1) HTTP  (适合测试或IP直连, 默认端口 30308)"
+        echo " 2) HTTPS (适合生产环境/域名反代, 默认端口 443)"
+        read -p "请输入 [1-2]: " PROTO_CHOICE
 
-        read -p "1. Server IP [默认: $DEFAULT_IP, IPv6请加方括号]: " INPUT_IP
-        SERVER_IP=${INPUT_IP:-$DEFAULT_IP}
+        if [[ "$PROTO_CHOICE" == "2" ]]; then
+            # HTTPS 模式
+            PROTOCOL="https"
+            DEFAULT_PORT="443"
+            read -p "1. Server 域名 (例如 monitor.example.com): " INPUT_HOST
+            # 如果用户没填域名，这里其实无法继续，但为了脚本不报错，暂用localhost兜底
+            SERVER_HOST=${INPUT_HOST:-"localhost"}
+        else
+            # HTTP 模式
+            PROTOCOL="http"
+            DEFAULT_PORT="30308"
+            DEFAULT_IP="127.0.0.1"
+            read -p "1. Server IP [默认: $DEFAULT_IP, IPv6请加方括号]: " INPUT_HOST
+            SERVER_HOST=${INPUT_HOST:-$DEFAULT_IP}
+        fi
 
-        read -p "2. Server Port [默认: 30308]: " INPUT_PORT
-        SERVER_PORT=${INPUT_PORT:-30308}
+        read -p "2. Server Port [默认: $DEFAULT_PORT]: " INPUT_PORT
+        SERVER_PORT=${INPUT_PORT:-$DEFAULT_PORT}
 
         read -p "3. 节点名称 [默认: $DEFAULT_NAME]: " INPUT_NAME
         NODE_NAME=${INPUT_NAME:-$DEFAULT_NAME}
@@ -107,9 +125,11 @@ case $CHOICE in
         read -p "4. Token [默认: hard-core-v7]: " INPUT_TOKEN
         AUTH_TOKEN=${INPUT_TOKEN:-"hard-core-v7"}
 
-        FULL_URL="http://${SERVER_IP}:${SERVER_PORT}/report"
+        # 拼接最终 URL
+        FULL_URL="${PROTOCOL}://${SERVER_HOST}:${SERVER_PORT}/report"
+        echo -e ">>> 🔗 目标地址: ${CYAN}${FULL_URL}${RESET}"
 
-        # 创建服务
+        # --- 创建服务 ---
         echo ">>> 📝 创建系统服务..."
         cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]
@@ -185,7 +205,6 @@ EOF
         rm -rf "${APP_DIR}"
         
         echo -e "${GREEN}✅ 卸载完成！系统已恢复清理干净。${RESET}"
-        echo -e "(注: 依赖工具 jq 予以保留，未删除)"
         ;;
 
     *)

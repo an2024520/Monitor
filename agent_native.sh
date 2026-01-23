@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ========================================================
-#  MyQuant Native Agent (Shell + jq 版) [Ultimate Fix]
+#  MyQuant Native Agent (Shell + jq 版) [Final]
 #  修复内容：
-#  1. 修复 CPU 0/100 跳变 (采用全周期差值算法)
+#  1. 修复 CPU 0/100 跳变 (全周期差值算法)
 #  2. 修复 大流量科学计数法报错 (printf 格式化)
-#  3. 修复 变量缺失导致的脚本崩溃
+#  3. 优化 日志抓取 (反向过滤 API 噪音，保留 Bot 关键日志)
 # ========================================================
 
 # --- 1. 基础配置 (环境变量优先) ---
@@ -51,10 +51,16 @@ read_json_file() {
     fi
 }
 
-# 获取日志
+# [优化] 获取日志 (反向过滤 API 噪音)
 get_logs_json() {
     if systemctl is-active --quiet "$SERVICE_TO_LOG"; then
-        journalctl -u "$SERVICE_TO_LOG" -n 15 --no-pager --output cat \
+        # 1. -n 100: 先抓取最近 100 行 (防止最新的日志全是 API 访问记录)
+        # 2. --output short-iso: 保留时间戳 (例如 2026-01-23T...)
+        # 3. grep -v "GET /api/": 剔除所有包含 API 请求的噪音行
+        # 4. tail -n 15: 只取最后有效的 15 行 Bot 日志
+        journalctl -u "$SERVICE_TO_LOG" -n 100 --no-pager --output short-iso \
+        | grep -v "GET /api/" \
+        | tail -n 15 \
         | jq -R -s 'split("\n") | map(select(length > 0))'
     else
         echo '["⚠️ 服务未运行"]'
