@@ -1,59 +1,122 @@
-# ... (前面的配置和 get_net_bytes, read_json_file 等函数保持不变) ...
+#!/bin/bash
+
+# ========================================================
+#  MyQuant Native Agent (Shell + jq 版) [Ultimate Fix]
+#  修复内容：
+#  1. 修复 CPU 0/100 跳变 (采用全周期差值算法)
+#  2. 修复 大流量科学计数法报错 (printf 格式化)
+#  3. 修复 变量缺失导致的脚本崩溃
+# ========================================================
+
+# --- 1. 基础配置 (环境变量优先) ---
+SERVER_URL="${AGENT_REPORT_URL:-http://127.0.0.1:30308/report}"
+AUTH_TOKEN="${AGENT_TOKEN:-hard-core-v7}"
+NODE_NAME="${AGENT_NAME:-$(hostname)}"
+INTERVAL=3
+
+# 机器人路径
+PATH_FUTURE_GRID="/opt/myquant_config/bot_state.json"
+PATH_AUTOPILOT="/opt/myquantbot/autopilot_state.json"
+SERVICE_TO_LOG="myquant"
+
+# --- 2. 依赖检查 ---
+if ! command -v jq &> /dev/null; then
+    echo "❌ Critical: 'jq' not found."
+    exit 1
+fi
 
 # --------------------------------------------------------
-# 辅助函数：只读取当前 /proc/stat 的数值，不做计算
+# 核心函数定义
 # --------------------------------------------------------
+
+# [修复] 强制输出纯数字，防止大流量导致科学计数法报错
+get_net_bytes() {
+    cat /proc/net/dev | awk '/eth0|ens|eno|enp|wlan/{rx+=$2; tx+=$10} END{printf "%.0f %.0f", rx, tx}'
+}
+
+# [新算法] 读取 CPU 原始计数 (user+nice+system+idle, idle)
 read_cpu_stat() {
     read -r cpu a b c idle rest < /proc/stat
-    # total = user + nice + system + idle
+    # total = a+b+c+idle
     echo "$((a+b+c+idle)) $idle"
 }
+
+# 安全读取 JSON 文件
+read_json_file() {
+    local fpath="$1"
+    if [ -f "$fpath" ]; then
+        cat "$fpath" | jq . 2>/dev/null || echo "null"
+    else
+        echo "null"
+    fi
+}
+
+# 获取日志
+get_logs_json() {
+    if systemctl is-active --quiet "$SERVICE_TO_LOG"; then
+        journalctl -u "$SERVICE_TO_LOG" -n 15 --no-pager --output cat \
+        | jq -R -s 'split("\n") | map(select(length > 0))'
+    else
+        echo '["⚠️ 服务未运行"]'
+    fi
+}
+
+# --------------------------------------------------------
+# 初始化 (基准数据)
+# --------------------------------------------------------
+
+# 确保所有变量初始化，防止第一次计算报错
+read last_rx last_tx <<< $(get_net_bytes)
+read last_cpu_total last_cpu_idle <<< $(read_cpu_stat)
+
+# 防止读取失败导致变量为空
+last_rx=${last_rx:-0}
+last_tx=${last_tx:-0}
+last_cpu_total=${last_cpu_total:-0}
+last_cpu_idle=${last_cpu_idle:-0}
+
+echo ">>> [Native Agent] 启动: $NODE_NAME -> $SERVER_URL"
 
 # --------------------------------------------------------
 # 主循环
 # --------------------------------------------------------
-
-# 1. 初始化基准数据 (网络 & CPU)
-read last_rx last_tx <<< $(get_net_bytes)
-read last_cpu_total last_cpu_idle <<< $(read_cpu_stat)
-
-echo ">>> [Native Agent] 启动: $NODE_NAME -> $SERVER_URL"
-
 while true; do
-    # === 关键修改：先 Sleep，利用 Sleep 的时间作为采样窗口 ===
-    # 这样计算出的就是这 3 秒内的精准平均值，非常平滑
+    # === 步骤 A: 采样窗口 (Sleep) ===
+    # 利用 Sleep 的时间作为采样区间，直接计算这 3 秒内的平均值
     sleep $INTERVAL
 
-    # 2. 获取当前数据 (CPU & 网络)
+    # === 步骤 B: 采集当前数据 ===
+    
+    # 1. CPU & 网络 (读取新值)
     read curr_cpu_total curr_cpu_idle <<< $(read_cpu_stat)
     read curr_rx curr_tx <<< $(get_net_bytes)
 
-    # 3. 计算 CPU 使用率 (差值法)
-    # 现在的 diff_total 大约是 300 (3秒 * 100Hz)，精度极高
-    diff_total=$((curr_cpu_total - last_cpu_total))
-    diff_idle=$((curr_cpu_idle - last_cpu_idle))
+    # 2. 计算差值 (Delta)
+    diff_cpu_total=$((curr_cpu_total - last_cpu_total))
+    diff_cpu_idle=$((curr_cpu_idle - last_cpu_idle))
     
-    cpu_pct="0.0"
-    if [ "$diff_total" -gt 0 ]; then
-        # (1 - idle/total) * 100
-        cpu_pct=$(awk -v i="$diff_idle" -v t="$diff_total" 'BEGIN {printf "%.1f", (1 - i/t) * 100}')
-    fi
-
-    # 4. 计算网络速率
     diff_rx=$((curr_rx - last_rx))
     diff_tx=$((curr_tx - last_tx))
-    
-    down_kb=$(awk "BEGIN {printf \"%.1f\", $diff_rx / 1024 / $INTERVAL}")
-    up_kb=$(awk "BEGIN {printf \"%.1f\", $diff_tx / 1024 / $INTERVAL}")
 
-    # 5. 更新旧值 (为下一轮做准备)
-    last_rx=$curr_rx
-    last_tx=$curr_tx
+    # 3. 计算 CPU 使用率 (使用 awk 处理浮点运算)
+    # 逻辑: 100 * (Total_Delta - Idle_Delta) / Total_Delta
+    cpu_pct="0.0"
+    if [ "$diff_cpu_total" -gt 0 ]; then
+        cpu_pct=$(awk -v i="$diff_cpu_idle" -v t="$diff_cpu_total" 'BEGIN {printf "%.1f", (1 - i/t) * 100}')
+    fi
+
+    # 4. 计算网速 (KB/s)
+    down_kb=$(awk -v rx="$diff_rx" -v intv="$INTERVAL" 'BEGIN {printf "%.1f", rx / 1024 / intv}')
+    up_kb=$(awk -v tx="$diff_tx" -v intv="$INTERVAL" 'BEGIN {printf "%.1f", tx / 1024 / intv}')
+
+    # 5. 更新基准值 (滚动)
     last_cpu_total=$curr_cpu_total
     last_cpu_idle=$curr_cpu_idle
+    last_rx=$curr_rx
+    last_tx=$curr_tx
 
-    # === 下面是常规的数据采集和发送 ===
-    
+    # === 步骤 C: 采集其他静态指标 ===
+
     # Boot Time
     uptime_sec=$(awk '{print $1}' /proc/uptime)
     now_sec=$(date +%s)
@@ -65,14 +128,17 @@ while true; do
     mem_info=$(free -b | grep Mem)
     mem_total=$(echo $mem_info | awk '{print $2}')
     mem_avail=$(echo $mem_info | awk '{print $7}')
-    mem_pct=$(awk "BEGIN {printf \"%.1f\", ($mem_total - $mem_avail) / $mem_total * 100}")
+    mem_pct="0.0"
+    if [ "$mem_total" -gt 0 ]; then
+        mem_pct=$(awk "BEGIN {printf \"%.1f\", ($mem_total - $mem_avail) / $mem_total * 100}")
+    fi
 
     # 硬盘
     disk_info=$(df -B1 / | tail -1)
     disk_total=$(echo $disk_info | awk '{print $2}')
     disk_pct=$(echo $disk_info | awk '{print $5}' | tr -d '%')
 
-    # 读取机器人状态
+    # 机器人状态
     grid_json=$(read_json_file "$PATH_FUTURE_GRID")
     autopilot_json=$(read_json_file "$PATH_AUTOPILOT")
     logs_json=$(get_logs_json)
@@ -82,7 +148,7 @@ while true; do
         has_bot="true"
     fi
 
-    # 组装 Payload
+    # === 步骤 D: 组装 JSON ===
     JSON_PAYLOAD=$(jq -n \
         --arg token "$AUTH_TOKEN" \
         --argjson ts "$(date +%s)" \
@@ -132,7 +198,7 @@ while true; do
             logs: $logs
         }')
 
-    # 发送数据
+    # === 步骤 E: 发送 ===
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
         --connect-timeout 2 \
         --max-time 5 \
@@ -146,5 +212,5 @@ while true; do
         echo "[$(date +%H:%M:%S)] 上报 ❌ | HTTP $HTTP_CODE"
     fi
     
-    # 注意：这里不需要再 sleep $INTERVAL 了，因为循环开头已经 sleep 过了
+    # 注意：这里不需要 sleep，因为循环开头已经 sleep 过了
 done
