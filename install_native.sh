@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ========================================================
-#  MyQuant Native Agent 管理脚本 (安装/更新)
-#  功能：一键部署或更新 Shell 版探针
+#  MyQuant Native Agent 管理脚本 (v1.2)
+#  功能：安装、更新、彻底卸载
 # ========================================================
 
 # 配置区域
@@ -76,13 +76,14 @@ echo "========================================================"
 echo "   MyQuant Monitor Native Agent (Shell版) "
 echo "========================================================"
 echo " 1. 🚀 全新安装 (Install)"
-echo " 2. 🔄 仅更新代码 (Update)"
+echo " 2. 🔄 更新代码 (Update)"
+echo " 3. 🗑️ 卸载/清除 (Uninstall)"
 echo "========================================================"
-read -p "请输入选项 [1-2]: " CHOICE
+read -p "请输入选项 [1-3]: " CHOICE
 
 case $CHOICE in
     1)
-        # ==================== [全新安装流程] ====================
+        # ==================== [全新安装] ====================
         echo ""
         echo -e "${GREEN}>>> 进入安装模式...${RESET}"
         
@@ -140,33 +141,51 @@ EOF
         ;;
 
     2)
-        # ==================== [更新流程] ====================
+        # ==================== [无痛更新] ====================
         echo ""
         echo -e "${GREEN}>>> 进入更新模式...${RESET}"
         
-        # 1. 检查目录是否存在
         if [ ! -d "$APP_DIR" ]; then
-            echo -e "${RED}❌ 错误: 未检测到安装目录 ($APP_DIR)，请先选择 '1. 全新安装'。${RESET}"
+            echo -e "${RED}❌ 错误: 未检测到安装目录，请先选择 '1. 全新安装'。${RESET}"
             exit 1
         fi
 
-        # 2. 下载新代码
         download_core
 
-        # 3. 重启服务
         echo ">>> ♻️  重启服务..."
         if systemctl list-units --full -all | grep -Fq "$SERVICE_NAME.service"; then
             systemctl daemon-reload
             systemctl restart ${SERVICE_NAME}
             echo -e "${GREEN}✅ 更新完成！服务已重启。${RESET}"
-            
-            # 显示简要状态
-            echo "----------------------------------------"
             systemctl status ${SERVICE_NAME} | grep "Active:"
-            echo "----------------------------------------"
         else
-            echo -e "${YELLOW}⚠️  警告: 代码已更新，但服务 ($SERVICE_NAME) 未找到，可能需要手动启动。${RESET}"
+            echo -e "${YELLOW}⚠️  警告: 代码已更新，但服务未找到。${RESET}"
         fi
+        ;;
+
+    3)
+        # ==================== [卸载模式] ====================
+        echo ""
+        echo -e "${YELLOW}>>> ⚠️  警告：这将停止监控并删除所有相关文件！${RESET}"
+        read -p "确认卸载吗？(输入 y 确认): " CONFIRM
+        if [[ "$CONFIRM" != "y" ]]; then
+            echo "已取消。"
+            exit 0
+        fi
+
+        echo ">>> [1/3] 停止并禁用服务..."
+        systemctl stop ${SERVICE_NAME} 2>/dev/null
+        systemctl disable ${SERVICE_NAME} 2>/dev/null
+        
+        echo ">>> [2/3] 删除服务配置..."
+        rm -f /etc/systemd/system/${SERVICE_NAME}.service
+        systemctl daemon-reload
+        
+        echo ">>> [3/3] 删除程序文件..."
+        rm -rf "${APP_DIR}"
+        
+        echo -e "${GREEN}✅ 卸载完成！系统已恢复清理干净。${RESET}"
+        echo -e "(注: 依赖工具 jq 予以保留，未删除)"
         ;;
 
     *)
