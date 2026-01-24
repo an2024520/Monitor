@@ -1,0 +1,15 @@
+# 1. 停止并禁用旧服务
+systemctl stop mq-monitor
+systemctl disable mq-monitor
+
+# 2. 删除系统服务配置文件
+rm -f /etc/systemd/system/mq-monitor.service
+systemctl daemon-reload
+
+# 3. 删除程序文件和虚拟环境
+rm -rf /opt/monitor_agent
+
+echo "✅ 旧版 Python Agent 已卸载干净。"
+
+#如果显示 Unit mq-monitor.service could not be found.，说明卸载非常彻底
+systemctl status mq-monitor

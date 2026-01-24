@@ -1,0 +1,2 @@
+#查看服务端IP/域名
+systemctl show mq-monitor-sh --property=Environment
